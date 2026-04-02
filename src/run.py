@@ -14,7 +14,9 @@ import time
 import numpy as np
 import torch.distributed as dist
 
-sys.path.append("/disk/jianggangwei/fv_guided_traning")
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from src.tuning.model.hparam import ModelArguments, DataTrainingArguments, CustomTrainingArguments
 from src.tuning.model.loader import load_model_and_tokenizer
@@ -71,20 +73,23 @@ def run():
     dataset = get_ni_dataset(model_args, data_args, training_args)
     
     # set data collator
-    label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
-    data_collator = DataCollatorForNI(
-        tokenizer,
-        model=model,
-        padding="longest",
-        max_source_length=data_args.max_source_length,
-        max_target_length=data_args.max_target_length,
-        label_pad_token_id=label_pad_token_id,
-        pad_to_multiple_of=8 if training_args.fp16 else None,
-        # add_task_name=data_args.add_task_name,
-    )
-    
-
-    training_args.remove_unused_columns = False
+    if data_args.cl_preprocessed_root:
+        # CL preprocessed path can provide model-ready columns; skip NI custom collator.
+        data_collator = None
+        training_args.remove_unused_columns = True
+    else:
+        label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
+        data_collator = DataCollatorForNI(
+            tokenizer,
+            model=model,
+            padding="longest",
+            max_source_length=data_args.max_source_length,
+            max_target_length=data_args.max_target_length,
+            label_pad_token_id=label_pad_token_id,
+            pad_to_multiple_of=8 if training_args.fp16 else None,
+            # add_task_name=data_args.add_task_name,
+        )
+        training_args.remove_unused_columns = False
 
     trainer_kargs, predict_dataset = split_dataset(dataset, data_args, training_args)
     

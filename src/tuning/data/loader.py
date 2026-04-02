@@ -1,13 +1,24 @@
 # from src.tuning.data.preprocess import *
+"""
+Training data loading.
+
+NI JSON path: Natural-Instructions-style JSON via ni_dataset.py; each example needs
+Task, Definition, Positive Examples, Negative Examples, Instance (input + output list)
+for DataCollatorForNI.
+
+CL preprocessed path: HuggingFace save_to_disk folders under
+<cl_preprocessed_root>/<cl_task_subdir>/<train_mixed|val>/ (e.g. data-0-of-1.arrow).
+Rows are normalized to the same NI shape via _ensure_ni_row.
+"""
 import os
 from hashlib import md5
-from datasets import load_dataset, load_from_disk
-from typing import TYPE_CHECKING, Any, Dict, List, Union
-from datasets import DatasetDict, concatenate_datasets
+from typing import Dict, List
+
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 
 
 def gen_ni_cache_path(cache_dir, data_args):
-    hash_str = data_args.data_dir + data_args.task_name + \
+    hash_str = (data_args.data_dir or "") + (data_args.task_name or "") + \
                str(data_args.max_num_instances_per_task) + str(data_args.max_num_instances_per_eval_task)
     print(hash_str)
     hash_obj = md5(hash_str.encode("utf-8"))
@@ -16,11 +27,51 @@ def gen_ni_cache_path(cache_dir, data_args):
 
     return cache_path
 
+
+def _load_cl_split(root: str, task_subdir: str, split_name: str) -> Dataset:
+    path = os.path.join(root, task_subdir, split_name)
+    if not os.path.isdir(path):
+        raise FileNotFoundError(
+            f"CL preprocessed split not found: {path} "
+            "(expected HuggingFace datasets save_to_disk folder with e.g. data-0-of-1.arrow)."
+        )
+    return load_from_disk(path)
+
+
+def get_cl_preprocessed_dataset(data_args, training_args) -> DatasetDict:
+    root = data_args.cl_preprocessed_root
+    task_subdir = data_args.cl_task_subdir
+    train_name = data_args.cl_train_split
+    val_name = data_args.cl_val_split
+
+    train_ds = _load_cl_split(root, task_subdir, train_name)
+    val_ds = _load_cl_split(root, task_subdir, val_name)
+
+    if data_args.max_num_instances_per_task is not None and data_args.max_num_instances_per_task >= 0:
+        n = min(len(train_ds), data_args.max_num_instances_per_task)
+        train_ds = train_ds.select(range(n))
+    if data_args.max_num_instances_per_eval_task is not None and data_args.max_num_instances_per_eval_task >= 0:
+        n = min(len(val_ds), data_args.max_num_instances_per_eval_task)
+        val_ds = val_ds.select(range(n))
+
+    return DatasetDict({"train": train_ds, "validation": val_ds})
+
+
 def get_ni_dataset(model_args, data_args, training_args):
 
+    if data_args.cl_preprocessed_root:
+        print(
+            "CL preprocessed:",
+            data_args.cl_preprocessed_root,
+            data_args.cl_task_subdir,
+            data_args.cl_train_split,
+            data_args.cl_val_split,
+        )
+        return get_cl_preprocessed_dataset(data_args, training_args)
+
     data_cache_dir = gen_ni_cache_path(model_args.cache_data_dir, data_args)
-    
-    print(data_args.data_dir,data_args.task_config_dir)
+
+    print(data_args.data_dir, data_args.task_config_dir)
 
     raw_datasets = load_dataset(
         "./src/tuning/data/ni_dataset.py",
@@ -33,15 +84,15 @@ def get_ni_dataset(model_args, data_args, training_args):
     )
 
     raw_datasets.cleanup_cache_files()
-    
+
     return raw_datasets
 
 
 
 def convert_format_trace(examples: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
     # convert dataset from sharegpt format to alpaca format
-    outputs = {"prompt": examples["prompt"], 
-               "query": ["" for _ in examples["answer"]], 
+    outputs = {"prompt": examples["prompt"],
+               "query": ["" for _ in examples["answer"]],
                "response": examples["answer"]}
     return outputs
 
@@ -51,6 +102,9 @@ def split_dataset(
     data_args,
     training_args
 ):
+    train_dataset = None
+    eval_dataset = None
+    predict_dataset = None
     if training_args.do_train:
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
