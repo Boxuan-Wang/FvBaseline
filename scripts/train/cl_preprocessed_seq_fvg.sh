@@ -10,11 +10,11 @@ set -euo pipefail
 set -x
 
 SEED="${SEED:-${1:-42}}"
-CUDA="${CUDA:-0,1,2,3}"
+CUDA="${CUDA:-4,5,6,7}"
 PORT="${PORT:-29500}"
-MODEL_PATH="${MODEL_PATH:?set MODEL_PATH to local model path}"
-CL_ROOT="${CL_ROOT:-./data/cl_preprocessed}"
-TASK_IDS="${TASK_IDS:-0 1 2 3 4}"
+MODEL_PATH="${MODEL_PATH:-/home/admin/.cache/modelscope/hub/models/LLM-Research/Meta-Llama-3-8B}"
+CL_ROOT="${CL_ROOT:-/home/admin/workspace/aop_lab/collabmask/data/cl_preprocessed_1}"
+TASK_IDS="${TASK_IDS:-0 1}"
 EXP_NAME="${EXP_NAME:-cl_seq_fvg_${SEED}}"
 FUNC_ROOT="${FUNC_ROOT:-./results/function_vector}"
 AUTO_COMPUTE_FV="${AUTO_COMPUTE_FV:-1}"
@@ -27,10 +27,10 @@ FV_CUDA="${FV_CUDA:-${CUDA%%,*}}"
 FV_MODEL="${FV_MODEL:-${MODEL_PATH}}"
 
 # Training hyperparams (aligned with existing seq0_fvg defaults)
-BS="${BS:-4}"
+BS="${BS:-32}"
 GAS="${GAS:-2}"
 LR="${LR:-1e-4}"
-EPOCHS="${EPOCHS:-10}"
+EPOCHS="${EPOCHS:-3}"
 EDIT_LAYER="${EDIT_LAYER:-9}"
 PR_ALPHA="${PR_ALPHA:-1.0}"
 KL_ALPHA1="${KL_ALPHA1:-20.0}"
