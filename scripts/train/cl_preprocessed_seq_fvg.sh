@@ -4,6 +4,8 @@
 #   SEED=42 MODEL_PATH=/path/to/model bash scripts/train/cl_preprocessed_seq_fvg.sh
 # Optional env:
 #   TASK_IDS="0 1 2 3 4" CUDA="0,1,2,3" EXP_NAME="cl_seq_fvg_42" FUNC_ROOT="./results/function_vector"
+#   AUTO_COMPUTE_FV=1 FV_DATA_ROOT="./data/fv" FV_DATASET_TEMPLATE="task_{tid}_icl"
+#   FV_DATASET_MAP="0:ni618_icl,1:ni1290_icl" FV_CUDA=0 FV_MODEL="llama-chat|/path/to/model"
 set -euo pipefail
 set -x
 
@@ -15,6 +17,14 @@ CL_ROOT="${CL_ROOT:-/home/admin/workspace/aop_lab/collabmask/data/cl_preprocesse
 TASK_IDS="${TASK_IDS:-0 1}"
 EXP_NAME="${EXP_NAME:-cl_seq_fvg_${SEED}}"
 FUNC_ROOT="${FUNC_ROOT:-./results/function_vector}"
+AUTO_COMPUTE_FV="${AUTO_COMPUTE_FV:-1}"
+FV_DATA_ROOT="${FV_DATA_ROOT:-./data/fv}"
+FV_DATASET_TEMPLATE="${FV_DATASET_TEMPLATE:-task_{tid}_icl}"
+FV_DATASET_MAP="${FV_DATASET_MAP:-}"
+FV_EXP_NAME="${FV_EXP_NAME:-uni}"
+FV_MAX_EVAL_SIZE="${FV_MAX_EVAL_SIZE:-100}"
+FV_CUDA="${FV_CUDA:-${CUDA%%,*}}"
+FV_MODEL="${FV_MODEL:-${MODEL_PATH}}"
 
 # Training hyperparams (aligned with existing seq0_fvg defaults)
 BS="${BS:-32}"
@@ -30,6 +40,57 @@ REGULAR_LAYER_NUM="${REGULAR_LAYER_NUM:-1}"
 
 mkdir -p "./results/${EXP_NAME}" "./log/${EXP_NAME}"
 
+resolve_fv_dataset_name() {
+  local tid="$1"
+  local default_name="${FV_DATASET_TEMPLATE//\{tid\}/${tid}}"
+
+  if [[ -n "${FV_DATASET_MAP}" ]]; then
+    local entry key val
+    for entry in ${FV_DATASET_MAP//,/ }; do
+      key="${entry%%:*}"
+      val="${entry#*:}"
+      if [[ "${key}" == "${tid}" && -n "${val}" ]]; then
+        echo "${val}"
+        return 0
+      fi
+    done
+  fi
+
+  echo "${default_name}"
+}
+
+compute_function_vector_if_missing() {
+  local tid="$1"
+  local dataset_name="$2"
+  local func_path="$3"
+
+  if [[ -f "${func_path}" ]]; then
+    return 0
+  fi
+
+  if [[ "${AUTO_COMPUTE_FV}" != "1" ]]; then
+    echo "Function vector not found: ${func_path}"
+    echo "Set FUNC_ROOT to precomputed vectors, or set AUTO_COMPUTE_FV=1."
+    return 1
+  fi
+
+  local dataset_json="${FV_DATA_ROOT}/${dataset_name}.json"
+  if [[ ! -f "${dataset_json}" ]]; then
+    echo "Function-vector source dataset not found: ${dataset_json}"
+    echo "Set FV_DATA_ROOT/FV_DATASET_TEMPLATE/FV_DATASET_MAP to valid dataset JSON files."
+    return 1
+  fi
+
+  echo "Function vector not found for task_${tid}; computing now from ${dataset_json} ..."
+  fv_cmd="--universal_set --exp_name ${FV_EXP_NAME} --prefixes_type N --separators_type N --max_eval_size ${FV_MAX_EVAL_SIZE} --gen --no_eval --root_data_dir ${FV_DATA_ROOT}"
+  bash scripts/eval_fv.sh "${FV_CUDA}" "${FV_MODEL}" "${dataset_name}" "${FUNC_ROOT}" "${fv_cmd}"
+
+  if [[ ! -f "${func_path}" ]]; then
+    echo "Function vector generation finished but expected file is still missing: ${func_path}"
+    return 1
+  fi
+}
+
 adapter_chain=""
 stage=0
 for tid in ${TASK_IDS}; do
@@ -40,12 +101,9 @@ for tid in ${TASK_IDS}; do
   log_dir="./log/${EXP_NAME}/${stage_name}"
   mkdir -p "${output_dir}" "${log_dir}"
 
-  func_path="${FUNC_ROOT}/${task_subdir}_icl/uni_function_vector.pt"
-  if [[ ! -f "${func_path}" ]]; then
-    echo "Function vector not found: ${func_path}"
-    echo "Set FUNC_ROOT or precompute vectors per task before running."
-    exit 1
-  fi
+  fv_dataset_name="$(resolve_fv_dataset_name "${tid}")"
+  func_path="${FUNC_ROOT}/${fv_dataset_name}/${FV_EXP_NAME}_function_vector.pt"
+  compute_function_vector_if_missing "${tid}" "${fv_dataset_name}" "${func_path}"
 
   extra_args=(
     --do_train

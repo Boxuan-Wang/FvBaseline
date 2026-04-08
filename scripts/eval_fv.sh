@@ -1,6 +1,6 @@
-which python
-
 #!/bin/bash
+set -euo pipefail
+
 cuda_id=$1
 model=$2
 dataset=$3
@@ -13,6 +13,9 @@ datasets=("${dataset}")
 
 if [[ "${model}" == "llama-chat" ]]; then
     model_name='/disk/jianggangwei/Llama-2-7b_chat_hf'
+else
+    # Allow passing a direct local model path.
+    model_name="${model}"
 fi
 
 
@@ -23,5 +26,5 @@ do
         --dataset_name=${d_name} \
         --save_path_root=$save_path \
         --model_name=${model_name} \
-        --max_eval_size=100 ${cmd}
+        ${cmd}
 done
