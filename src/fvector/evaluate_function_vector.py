@@ -2,6 +2,7 @@ import os, json
 import torch, numpy as np
 import argparse
 import sys
+import re
 
 # Include prompt creation helper functions
 from src.fvector.utils.prompt_utils import *
@@ -51,11 +52,21 @@ if __name__ == "__main__":
     args = parser.parse_args()  
 
     dataset_name = args.dataset_name
+    save_dataset_name = dataset_name
+    # Normalize save folder names when dataset_name is a nested CL JSONL path
+    # (e.g., task_0/train/data.jsonl -> task_0).
+    if isinstance(dataset_name, str):
+        normalized = dataset_name.replace("\\", "/")
+        m = re.search(r'(^|/)(task_[^/]+)/[^/]+/data\.jsonl$', normalized)
+        if m is not None:
+            save_dataset_name = m.group(2)
+        else:
+            save_dataset_name = dataset_name
     model_name = args.model_name
     exp_name = args.exp_name
     root_data_dir = args.root_data_dir
-    save_path_root = f"{args.save_path_root}/{dataset_name}"
-    ie_path_root = f"{args.ie_path_root}/{dataset_name}" if args.ie_path_root else save_path_root
+    save_path_root = f"{args.save_path_root}/{save_dataset_name}"
+    ie_path_root = f"{args.ie_path_root}/{save_dataset_name}" if args.ie_path_root else save_path_root
     seed = args.seed
     device = args.device
     mean_activations_path = args.mean_activations_path

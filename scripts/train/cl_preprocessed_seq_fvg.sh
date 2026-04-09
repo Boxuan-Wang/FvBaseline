@@ -4,7 +4,7 @@
 # Usage:
 #   SEED=42 MODEL_PATH=/path/to/model bash scripts/train/cl_preprocessed_seq_fvg.sh
 # Optional env:
-#   TASK_IDS="0 1 2 3 4" CUDA="0,1,2,3" EXP_NAME="cl_seq_fvg_42" FUNC_ROOT="./results/function_vector"
+#   TASK_IDS="0 1 2 3 4" CUDA="0,1,2,3" EXP_NAME="cl_seq_fvg_42" FUNC_ROOT="./results/<model_short>/function_vector"
 #   AUTO_COMPUTE_FV=1 FV_DATA_ROOT="./data/fv" FV_DATASET_TEMPLATE="task_{tid}/train/data.jsonl"
 #   FV_DATASET_MAP="0:ni618_icl,1:ni1290_icl" FV_CUDA=0 FV_MODEL="llama-chat|/path/to/model"
 set -euo pipefail
@@ -17,7 +17,6 @@ MODEL_PATH="${MODEL_PATH:-/home/admin/.cache/modelscope/hub/models/LLM-Research/
 CL_ROOT="${CL_ROOT:-/home/admin/workspace/aop_lab/collabmask/data/cl_preprocessed_2}"
 TASK_IDS="${TASK_IDS:-0 1}"
 EXP_NAME="${EXP_NAME:-cl_seq_fvg_${SEED}}"
-FUNC_ROOT="${FUNC_ROOT:-./results/function_vector}"
 AUTO_COMPUTE_FV="${AUTO_COMPUTE_FV:-1}"
 FV_DATA_ROOT="${FV_DATA_ROOT:-./data/fv}"
 FV_DATASET_TEMPLATE="${FV_DATASET_TEMPLATE:-task_{tid}/train/data.jsonl}"
@@ -26,6 +25,14 @@ FV_EXP_NAME="${FV_EXP_NAME:-uni}"
 FV_MAX_EVAL_SIZE="${FV_MAX_EVAL_SIZE:-100}"
 FV_CUDA="${FV_CUDA:-${CUDA%%,*}}"
 FV_MODEL="${FV_MODEL:-${MODEL_PATH}}"
+FV_MODEL_SHORT_DEFAULT="${FV_MODEL##*/}"
+FV_MODEL_SHORT_DEFAULT="${FV_MODEL_SHORT_DEFAULT//[^A-Za-z0-9._-]/_}"
+FV_MODEL_SHORT="${FV_MODEL_SHORT:-${FV_MODEL_SHORT_DEFAULT}}"
+FUNC_ROOT="${FUNC_ROOT:-./results/${FV_MODEL_SHORT}/function_vector}"
+if [[ "${FUNC_ROOT}" == "./results/function_vector" || "${FUNC_ROOT}" == "./results/function_vector/" ]]; then
+  FUNC_ROOT="./results/${FV_MODEL_SHORT}/function_vector"
+  echo "Info: normalized FUNC_ROOT to '${FUNC_ROOT}' for per-model FV storage." >&2
+fi
 
 # Training hyperparams (aligned with existing seq0_fvg defaults)
 BS="${BS:-32}"
@@ -73,6 +80,29 @@ resolve_fv_dataset_name() {
   fi
 
   echo "${default_name}"
+}
+
+resolve_fv_storage_key() {
+  local tid="$1"
+  local dataset_name="$2"
+  local key=""
+
+  # For CL JSONL paths like task_0/train/data.jsonl -> task_0
+  if [[ "${dataset_name}" =~ (^|/)(task_[^/]+)/[^/]+/data\.jsonl$ ]]; then
+    key="${BASH_REMATCH[2]}"
+  elif [[ "${dataset_name}" =~ (^|/)(task_[^/]+)/data\.jsonl$ ]]; then
+    key="${BASH_REMATCH[2]}"
+  else
+    key="${dataset_name}"
+    key="${key%.jsonl}"
+    key="${key%.json}"
+    key="${key//\//_}"
+  fi
+
+  if [[ -z "${key}" ]]; then
+    key="task_${tid}"
+  fi
+  echo "${key}"
 }
 
 compute_function_vector_if_missing() {
@@ -132,7 +162,8 @@ for tid in ${TASK_IDS}; do
   mkdir -p "${output_dir}" "${log_dir}"
 
   fv_dataset_name="$(resolve_fv_dataset_name "${tid}")"
-  func_path="${FUNC_ROOT}/${fv_dataset_name}/${FV_EXP_NAME}_function_vector.pt"
+  fv_storage_key="$(resolve_fv_storage_key "${tid}" "${fv_dataset_name}")"
+  func_path="${FUNC_ROOT}/${fv_storage_key}/${FV_EXP_NAME}_function_vector.pt"
   compute_function_vector_if_missing "${tid}" "${fv_dataset_name}" "${func_path}"
 
   extra_args=(
