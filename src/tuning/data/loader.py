@@ -6,15 +6,15 @@ NI JSON path: Natural-Instructions-style JSON via ni_dataset.py; each example ne
 Task, Definition, Positive Examples, Negative Examples, Instance (input + output list)
 for DataCollatorForNI.
 
-CL preprocessed path: HuggingFace save_to_disk folders under
-<cl_preprocessed_root>/<cl_task_subdir>/<train_mixed|val>/ (e.g. data-0-of-1.arrow).
-Rows are normalized to the same NI shape via _ensure_ni_row.
+CL preprocessed path: JSONL files under
+<cl_preprocessed_root>/<cl_task_subdir>/<train_mixed|val>/data.jsonl
+with required `question` and `answer` columns.
 """
 import os
 from hashlib import md5
-from typing import Dict, List
+from typing import Any, Dict, List
 
-from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, load_dataset
 
 
 def gen_ni_cache_path(cache_dir, data_args):
@@ -29,13 +29,24 @@ def gen_ni_cache_path(cache_dir, data_args):
 
 
 def _load_cl_split(root: str, task_subdir: str, split_name: str) -> Dataset:
-    path = os.path.join(root, task_subdir, split_name)
-    if not os.path.isdir(path):
+    split_dir = os.path.join(root, task_subdir, split_name)
+    jsonl_path = os.path.join(split_dir, "data.jsonl")
+    if not os.path.isfile(jsonl_path):
         raise FileNotFoundError(
-            f"CL preprocessed split not found: {path} "
-            "(expected HuggingFace datasets save_to_disk folder with e.g. data-0-of-1.arrow)."
+            f"CL preprocessed split JSONL not found: {jsonl_path} "
+            "(expected <root>/<cl_task_subdir>/<split>/data.jsonl)."
         )
-    return load_from_disk(path)
+
+    dataset = load_dataset("json", data_files=jsonl_path, split="train")
+    required_columns = {"question", "answer"}
+    missing_columns = required_columns.difference(dataset.column_names)
+    if missing_columns:
+        raise ValueError(
+            f"CL split at {jsonl_path} is missing required columns: "
+            f"{sorted(missing_columns)}; found columns={dataset.column_names}"
+        )
+
+    return dataset
 
 
 def get_cl_preprocessed_dataset(data_args, training_args) -> DatasetDict:

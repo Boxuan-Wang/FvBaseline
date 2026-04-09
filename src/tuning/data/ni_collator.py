@@ -33,85 +33,96 @@ class DataCollatorForNI:
 
         model_inputs = []
         sources = []
+        bos_token = self.tokenizer.bos_token or ""
+        eos_token = self.tokenizer.eos_token or ""
         for instance in batch:
-            
-            add_task_name = self.add_task_name
-            add_task_definition = self.add_task_definition
-            num_pos_examples = self.num_pos_examples
-            num_neg_examples = self.num_neg_examples
-            add_explanation = self.add_explanation 
-
-            task_input = ""
-            # add the input first.
-            task_input += "Now complete the following example -\n"
-            task_input += f"Input: {instance['Instance']['input'].strip()}"
-            if not task_input[-1] in string.punctuation:
-                task_input += "."
-            task_input += "\n"
-            task_input += "Output:"
-            
-            task_name = ""
-            if add_task_name:
-                task_name += instance["Task"] + ". "
-
-            definition = ""
-            if add_task_definition:
-                if isinstance(instance["Definition"], list):
-                    definition = "Definition: " + instance["Definition"][0].strip() # TODO: should we use <Definition>?
+            if "question" in instance and "answer" in instance:
+                question = str(instance["question"]).strip()
+                answer_value = instance["answer"]
+                if isinstance(answer_value, list):
+                    answer = str(random.choice(answer_value) if answer_value else "").strip()
                 else:
-                    definition = "Definition: " + instance["Definition"].strip()
-                if not definition[-1] in string.punctuation:
-                    definition += "."
-                definition += "\n\n"
-            
-            # try to add positive examples.
-            pos_examples = []
-            for idx, pos_example in enumerate(instance["Positive Examples"][:num_pos_examples]):
-                pos_example_str = f" Positive Example {idx+1} -\n"
-                pos_example_str += f"Input: {pos_example['input'].strip()}"
-                if not pos_example_str[-1] in string.punctuation:
-                    pos_example_str += "."
-                pos_example_str += "\n"
-                pos_example_str += f" Output: {pos_example['output'].strip()}"
-                if not pos_example_str[-1] in string.punctuation:
-                    pos_example_str += "."
-                pos_example_str += "\n" 
-                if add_explanation and "explanation" in pos_example:
-                    pos_example_str += f" Explanation: {pos_example['explanation'].strip()}"
+                    answer = str(answer_value).strip()
+                source = bos_token + question
+                label = answer + eos_token
+            else:
+                add_task_name = self.add_task_name
+                add_task_definition = self.add_task_definition
+                num_pos_examples = self.num_pos_examples
+                num_neg_examples = self.num_neg_examples
+                add_explanation = self.add_explanation
+
+                task_input = ""
+                # add the input first.
+                task_input += "Now complete the following example -\n"
+                task_input += f"Input: {instance['Instance']['input'].strip()}"
+                if not task_input[-1] in string.punctuation:
+                    task_input += "."
+                task_input += "\n"
+                task_input += "Output:"
+
+                task_name = ""
+                if add_task_name:
+                    task_name += instance["Task"] + ". "
+
+                definition = ""
+                if add_task_definition:
+                    if isinstance(instance["Definition"], list):
+                        definition = "Definition: " + instance["Definition"][0].strip() # TODO: should we use <Definition>?
+                    else:
+                        definition = "Definition: " + instance["Definition"].strip()
+                    if not definition[-1] in string.punctuation:
+                        definition += "."
+                    definition += "\n\n"
+
+                # try to add positive examples.
+                pos_examples = []
+                for idx, pos_example in enumerate(instance["Positive Examples"][:num_pos_examples]):
+                    pos_example_str = f" Positive Example {idx+1} -\n"
+                    pos_example_str += f"Input: {pos_example['input'].strip()}"
                     if not pos_example_str[-1] in string.punctuation:
                         pos_example_str += "."
                     pos_example_str += "\n"
-                pos_example_str += "\n"
-                if len(self.tokenizer(definition + " ".join(pos_examples) + pos_example_str + task_input)["input_ids"]) <= self.max_source_length:
-                    pos_examples.append(pos_example_str)
-                else:
-                    break
-            
-            # try to add negative examples.
-            neg_examples = []
-            for idx, neg_example in enumerate(instance["Negative Examples"][:num_neg_examples]):
-                neg_example_str = f" Negative Example {idx+1} -\n"
-                neg_example_str += f"Input: {neg_example['input'].strip()}"
-                if not neg_example_str[-1] in string.punctuation:
-                    neg_example_str += "."
-                neg_example_str += "\n"
-                neg_example_str += f" Output: {neg_example['output'].strip()}"
-                if not neg_example_str[-1] in string.punctuation:
-                    neg_example_str += "."
-                neg_example_str += "\n"
-                if add_explanation and "explanation" in neg_example:
-                    neg_example_str += f" Explanation: {neg_example['explanation'].strip()}"
+                    pos_example_str += f" Output: {pos_example['output'].strip()}"
+                    if not pos_example_str[-1] in string.punctuation:
+                        pos_example_str += "."
+                    pos_example_str += "\n"
+                    if add_explanation and "explanation" in pos_example:
+                        pos_example_str += f" Explanation: {pos_example['explanation'].strip()}"
+                        if not pos_example_str[-1] in string.punctuation:
+                            pos_example_str += "."
+                        pos_example_str += "\n"
+                    pos_example_str += "\n"
+                    if len(self.tokenizer(definition + " ".join(pos_examples) + pos_example_str + task_input)["input_ids"]) <= self.max_source_length:
+                        pos_examples.append(pos_example_str)
+                    else:
+                        break
+
+                # try to add negative examples.
+                neg_examples = []
+                for idx, neg_example in enumerate(instance["Negative Examples"][:num_neg_examples]):
+                    neg_example_str = f" Negative Example {idx+1} -\n"
+                    neg_example_str += f"Input: {neg_example['input'].strip()}"
                     if not neg_example_str[-1] in string.punctuation:
                         neg_example_str += "."
                     neg_example_str += "\n"
-                neg_example_str += "\n"
-                if len(self.tokenizer(definition + " ".join(pos_examples) + " ".join(neg_examples) + neg_example_str + task_input)["input_ids"]) <= self.max_source_length:
-                    neg_examples.append(neg_example_str)
-                else:
-                    break 
-            
-            source =  self.tokenizer.bos_token + task_name + definition + "".join(pos_examples) + "".join(neg_examples) + task_input
-            label = random.choice(instance['Instance']["output"]) + self.tokenizer.eos_token
+                    neg_example_str += f" Output: {neg_example['output'].strip()}"
+                    if not neg_example_str[-1] in string.punctuation:
+                        neg_example_str += "."
+                    neg_example_str += "\n"
+                    if add_explanation and "explanation" in neg_example:
+                        neg_example_str += f" Explanation: {neg_example['explanation'].strip()}"
+                        if not neg_example_str[-1] in string.punctuation:
+                            neg_example_str += "."
+                        neg_example_str += "\n"
+                    neg_example_str += "\n"
+                    if len(self.tokenizer(definition + " ".join(pos_examples) + " ".join(neg_examples) + neg_example_str + task_input)["input_ids"]) <= self.max_source_length:
+                        neg_examples.append(neg_example_str)
+                    else:
+                        break
+
+                source = bos_token + task_name + definition + "".join(pos_examples) + "".join(neg_examples) + task_input
+                label = random.choice(instance['Instance']["output"]) + eos_token
         
             source_ids = self.tokenizer(source, add_special_tokens=False)["input_ids"]
             target_ids = self.tokenizer(label, add_special_tokens=False)["input_ids"]

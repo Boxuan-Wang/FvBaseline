@@ -74,9 +74,18 @@ def run():
     
     # set data collator
     if data_args.cl_preprocessed_root:
-        # CL preprocessed path can provide model-ready columns; skip NI custom collator.
-        data_collator = None
-        training_args.remove_unused_columns = True
+        # CL JSONL path uses raw question/answer text and needs collator tokenization.
+        label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
+        data_collator = DataCollatorForNI(
+            tokenizer,
+            model=model,
+            padding="longest",
+            max_source_length=data_args.max_source_length,
+            max_target_length=data_args.max_target_length,
+            label_pad_token_id=label_pad_token_id,
+            pad_to_multiple_of=8 if training_args.fp16 else None,
+        )
+        training_args.remove_unused_columns = False
     else:
         label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
         data_collator = DataCollatorForNI(

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Sequential FV-guided continual training on ./data/cl_preprocessed/task_k/{train_mixed,val}
+# Sequential FV-guided continual training on
+# ./data/cl_preprocessed_2/task_k/{train_mixed,val}/data.jsonl
 # Usage:
 #   SEED=42 MODEL_PATH=/path/to/model bash scripts/train/cl_preprocessed_seq_fvg.sh
 # Optional env:
@@ -13,7 +14,7 @@ SEED="${SEED:-${1:-42}}"
 CUDA="${CUDA:-4,5,6,7}"
 PORT="${PORT:-29500}"
 MODEL_PATH="${MODEL_PATH:-/home/admin/.cache/modelscope/hub/models/LLM-Research/Meta-Llama-3-8B}"
-CL_ROOT="${CL_ROOT:-/home/admin/workspace/aop_lab/collabmask/data/cl_preprocessed_1}"
+CL_ROOT="${CL_ROOT:-/home/admin/workspace/aop_lab/collabmask/data/cl_preprocessed_2}"
 TASK_IDS="${TASK_IDS:-0 1}"
 EXP_NAME="${EXP_NAME:-cl_seq_fvg_${SEED}}"
 FUNC_ROOT="${FUNC_ROOT:-./results/function_vector}"

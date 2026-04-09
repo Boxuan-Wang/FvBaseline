@@ -3,8 +3,6 @@ import torch, numpy as np
 import argparse
 import sys
 
-sys.path.append("/disk/jianggangwei/fv_guided_traning")
-
 # Include prompt creation helper functions
 from src.fvector.utils.prompt_utils import *
 from src.fvector.utils.intervention_utils import *
