@@ -355,12 +355,22 @@ class ICLDataset:
     """
     def __init__(self, dataset):    
         if isinstance(dataset, str):
-            self.raw_data = pd.read_json(dataset)
+            if dataset.endswith(".jsonl"):
+                self.raw_data = pd.read_json(dataset, lines=True)
+            else:
+                try:
+                    self.raw_data = pd.read_json(dataset)
+                except ValueError:
+                    # Support line-delimited JSON files even if extension is not .jsonl.
+                    self.raw_data = pd.read_json(dataset, lines=True)
         elif isinstance(dataset, dict):
             self.raw_data = pd.DataFrame(dataset)
         if 'instruction' in self.raw_data.columns:
             self.raw_data = self.raw_data[['instruction', 'output']]
             self.raw_data = self.raw_data.rename(columns={'instruction': 'input'})
+        elif 'question' in self.raw_data.columns and 'answer' in self.raw_data.columns:
+            self.raw_data = self.raw_data[['question', 'answer']]
+            self.raw_data = self.raw_data.rename(columns={'question': 'input', 'answer': 'output'})
         else:
             self.raw_data = self.raw_data[['input', 'output']]
 
@@ -447,8 +457,22 @@ def load_dataset(task_name: str,
     dataset: the dict contain the train/valid/test dataset splits
     """
 
+    if os.path.isabs(task_name):
+        d_path = task_name
+    else:
+        direct_path = os.path.join(root_data_dir, task_name)
+        json_path = os.path.join(root_data_dir, f'{task_name}.json')
+        jsonl_path = os.path.join(root_data_dir, f'{task_name}.jsonl')
 
-    d_path = os.path.join(root_data_dir, f'{task_name}.json')
+        if os.path.isfile(direct_path):
+            d_path = direct_path
+        elif os.path.isfile(json_path):
+            d_path = json_path
+        elif os.path.isfile(jsonl_path):
+            d_path = jsonl_path
+        else:
+            # Keep backward behavior for error visibility.
+            d_path = json_path
 
     dataset = ICLDataset(d_path)
     dataset = split_icl_dataset(dataset, test_size=test_size, seed=seed)

@@ -5,7 +5,7 @@
 #   SEED=42 MODEL_PATH=/path/to/model bash scripts/train/cl_preprocessed_seq_fvg.sh
 # Optional env:
 #   TASK_IDS="0 1 2 3 4" CUDA="0,1,2,3" EXP_NAME="cl_seq_fvg_42" FUNC_ROOT="./results/function_vector"
-#   AUTO_COMPUTE_FV=1 FV_DATA_ROOT="./data/fv" FV_DATASET_TEMPLATE="task_{tid}_icl"
+#   AUTO_COMPUTE_FV=1 FV_DATA_ROOT="./data/fv" FV_DATASET_TEMPLATE="task_{tid}/train/data.jsonl"
 #   FV_DATASET_MAP="0:ni618_icl,1:ni1290_icl" FV_CUDA=0 FV_MODEL="llama-chat|/path/to/model"
 set -euo pipefail
 set -x
@@ -20,7 +20,7 @@ EXP_NAME="${EXP_NAME:-cl_seq_fvg_${SEED}}"
 FUNC_ROOT="${FUNC_ROOT:-./results/function_vector}"
 AUTO_COMPUTE_FV="${AUTO_COMPUTE_FV:-1}"
 FV_DATA_ROOT="${FV_DATA_ROOT:-./data/fv}"
-FV_DATASET_TEMPLATE="${FV_DATASET_TEMPLATE:-task_{tid}_icl}"
+FV_DATASET_TEMPLATE="${FV_DATASET_TEMPLATE:-task_{tid}/train/data.jsonl}"
 FV_DATASET_MAP="${FV_DATASET_MAP:-}"
 FV_EXP_NAME="${FV_EXP_NAME:-uni}"
 FV_MAX_EVAL_SIZE="${FV_MAX_EVAL_SIZE:-100}"
@@ -64,6 +64,7 @@ compute_function_vector_if_missing() {
   local tid="$1"
   local dataset_name="$2"
   local func_path="$3"
+  local dataset_json=""
 
   if [[ -f "${func_path}" ]]; then
     return 0
@@ -75,10 +76,23 @@ compute_function_vector_if_missing() {
     return 1
   fi
 
-  local dataset_json="${FV_DATA_ROOT}/${dataset_name}.json"
+  if [[ "${dataset_name}" == /* ]]; then
+    dataset_json="${dataset_name}"
+  elif [[ "${dataset_name}" == *.json || "${dataset_name}" == *.jsonl ]]; then
+    dataset_json="${FV_DATA_ROOT}/${dataset_name}"
+  elif [[ -f "${FV_DATA_ROOT}/${dataset_name}.json" ]]; then
+    dataset_json="${FV_DATA_ROOT}/${dataset_name}.json"
+  elif [[ -f "${FV_DATA_ROOT}/${dataset_name}.jsonl" ]]; then
+    dataset_json="${FV_DATA_ROOT}/${dataset_name}.jsonl"
+  elif [[ -f "${FV_DATA_ROOT}/${dataset_name}/data.jsonl" ]]; then
+    dataset_json="${FV_DATA_ROOT}/${dataset_name}/data.jsonl"
+  else
+    dataset_json="${FV_DATA_ROOT}/${dataset_name}"
+  fi
+
   if [[ ! -f "${dataset_json}" ]]; then
     echo "Function-vector source dataset not found: ${dataset_json}"
-    echo "Set FV_DATA_ROOT/FV_DATASET_TEMPLATE/FV_DATASET_MAP to valid dataset JSON files."
+    echo "Set FV_DATA_ROOT/FV_DATASET_TEMPLATE/FV_DATASET_MAP to a valid JSON/JSONL path."
     return 1
   fi
 
