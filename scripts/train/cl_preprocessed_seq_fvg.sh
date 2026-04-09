@@ -43,7 +43,18 @@ mkdir -p "./results/${EXP_NAME}" "./log/${EXP_NAME}"
 
 resolve_fv_dataset_name() {
   local tid="$1"
-  local default_name="${FV_DATASET_TEMPLATE//\{tid\}/${tid}}"
+  local template="${FV_DATASET_TEMPLATE}"
+  local default_name=""
+
+  # Auto-fix common typo like: task_{tid/train/data.jsonl}
+  if [[ "${template}" == *"{tid/"* ]]; then
+    template="${template//\{tid\//\{tid\}\/}"
+    echo "Warning: corrected malformed FV_DATASET_TEMPLATE to '${template}'" >&2
+  fi
+  if [[ "${template}" != *"{tid}"* ]]; then
+    echo "Warning: FV_DATASET_TEMPLATE does not contain '{tid}': '${template}'" >&2
+  fi
+  default_name="${template//\{tid\}/${tid}}"
 
   if [[ -n "${FV_DATASET_MAP}" ]]; then
     local entry key val
