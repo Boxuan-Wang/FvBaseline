@@ -173,12 +173,13 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "whether to preappend dataset name before the task input."}
     )
-    # Continual-learning preprocessed Arrow (HuggingFace datasets save_to_disk per split)
+    # Continual-learning preprocessed JSONL (<split>/data.jsonl per split)
     cl_preprocessed_root: Optional[str] = field(
         default=None,
         metadata={
-            "help": "If set, load Arrow via load_from_disk under "
-            "<root>/<cl_task_subdir>/<cl_train_split|cl_val_split> instead of ni_dataset JSON."
+            "help": "If set, load JSONL under "
+            "<root>/<cl_task_subdir>/<cl_train_split|cl_val_split>/data.jsonl "
+            "instead of ni_dataset JSON."
         },
     )
     cl_task_subdir: str = field(
