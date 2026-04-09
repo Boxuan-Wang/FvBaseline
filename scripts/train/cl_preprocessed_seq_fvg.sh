@@ -47,9 +47,13 @@ resolve_fv_dataset_name() {
   local default_name=""
 
   # Auto-fix common typo like: task_{tid/train/data.jsonl}
-  if [[ "${template}" == *"{tid/"* ]]; then
-    template="${template//\{tid\//\{tid\}\/}"
+  # Convert "<prefix>{tid/<suffix>}" -> "<prefix>{tid}/<suffix>"
+  if [[ "${template}" =~ ^(.*)\{tid/(.*)\}$ ]]; then
+    template="${BASH_REMATCH[1]}{tid}/${BASH_REMATCH[2]}"
     echo "Warning: corrected malformed FV_DATASET_TEMPLATE to '${template}'" >&2
+  elif [[ "${template}" == *"{tid/"* ]]; then
+    echo "Warning: FV_DATASET_TEMPLATE looks malformed: '${template}'" >&2
+    echo "Expected placeholder format: '{tid}' (e.g. task_{tid}/train/data.jsonl)." >&2
   fi
   if [[ "${template}" != *"{tid}"* ]]; then
     echo "Warning: FV_DATASET_TEMPLATE does not contain '{tid}': '${template}'" >&2
