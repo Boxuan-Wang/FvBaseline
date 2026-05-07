@@ -43,6 +43,7 @@ results/
 log/
 outputs/
 checkpoints/
+results_llama/
 
 # Local datasets and large downloaded assets
 data/
