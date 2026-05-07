@@ -14,6 +14,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _init_fv_projections_if_needed(model, training_args):
+    # FVG training path expects `model.fv_projections` to exist.
+    if not getattr(training_args, "fv_pr", False):
+        return
+    if hasattr(model, "fv_projections"):
+        return
+    if not (hasattr(model, "config") and hasattr(model.config, "hidden_size") and hasattr(model.config, "num_attention_heads")):
+        logger.warning("Skipping fv_projections init: missing hidden_size/num_attention_heads in model config.")
+        return
+
+    dim = model.config.hidden_size // model.config.num_attention_heads
+    model.fv_projections = nn.ModuleList()
+    for i in range(10):
+        model.fv_projections.append(nn.Linear(dim, dim))
+        model.fv_projections[i].apply(init_diagonal)
+    logger.info("Initialized fv_projections for non-LLaMA model compatibility.")
+
+
 def load_model_and_tokenizer(
     model_args,
     training_args,
@@ -30,8 +48,12 @@ def load_model_and_tokenizer(
         use_auth_token=True if model_args.use_auth_token else None,
         **config_kwargs
     )
+    model_type = getattr(config, "model_type", "").lower()
+    model_name = model_args.model_name_or_path.lower()
+    is_llama_model = model_type == "llama" or "llama" in model_name
+    is_mistral_model = model_type == "mistral" or "mistral" in model_name
 
-    if 'llama' in model_args.model_name_or_path.lower() or 'mistral' in model_args.model_name_or_path.lower() :
+    if is_llama_model or is_mistral_model:
         config.bos_token_id = 1
         config.eos_token_id = 2
         config.pad_token_id = 1
@@ -43,25 +65,31 @@ def load_model_and_tokenizer(
         **config_kwargs
     )
 
-    # if 'llama' in model_args.model_name_or_path.lower() or 'mistral' in model_args.model_name_or_path.lower() :
-    if 'llama-2':
+    if is_llama_model or is_mistral_model:
         tokenizer.bos_token_id = 1
         tokenizer.eos_token_id = 2
         tokenizer.pad_token_id = 1
     else:
-        tokenizer.pad_token = tokenizer.eos_token
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
     tokenizer.padding_side = 'left'
 
-    if model_args.local_model == "llama":
+    if model_args.local_model == "llama" and is_llama_model:
         from src.tuning.model.llama import LlamaForCausalLM
         model = LlamaForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             config=config,
             low_cpu_mem_usage=(not is_deepspeed_zero3_enabled()),
             **config_kwargs
-        )    
+        )
     else:
+        if model_args.local_model == "llama" and not is_llama_model:
+            logger.warning(
+                "model_args.local_model is set to 'llama' but config model_type is '%s'; "
+                "falling back to AutoModelForCausalLM for compatibility.",
+                model_type or "unknown",
+            )
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             config=config,
@@ -69,13 +97,19 @@ def load_model_and_tokenizer(
             **config_kwargs
         )
 
+    _init_fv_projections_if_needed(model, training_args)
+
     logger.info("Init adapter !!")
     model = init_adapter(model, model_args, training_args, is_trainable=training_args.do_train)
 
     print(len(tokenizer))
-    if 'llama' in model_args.model_name_or_path.lower() or 'mistral' in model_args.model_name_or_path.lower() :
+    if is_llama_model or is_mistral_model:
         model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=32)
-    print( model.model.model.embed_tokens.weight.shape)
+    input_embeddings = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else None
+    if input_embeddings is not None and hasattr(input_embeddings, "weight"):
+        print(input_embeddings.weight.shape)
+    else:
+        logger.warning("Could not resolve input embedding weight shape for model debug print.")
     # if model_args.local_model == "llama":
 
     #     for i in range(10):

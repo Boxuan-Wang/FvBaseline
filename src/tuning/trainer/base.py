@@ -84,18 +84,24 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             top_lh = list(zip(*np.unravel_index(topk_inds, h_shape), [round(x.item(),4) for x in topk_vals]))
             self.pos = top_lh[:10]
         else:
-            if 'Llama-2-7b' in self.args.model_name_or_path:
+            model_name = self.args.model_name_or_path.lower()
+            if 'llama-2-7b' in model_name:
                 pos = [(14, 1, 0.0391), (11, 2, 0.0225), (9, 25, 0.02), (12, 15, 0.0196), (12, 28, 0.0191), (13, 7, 0.0171), (11, 18, 0.0152), (12, 18, 0.0113), (16, 10, 0.007), (14, 16, 0.007),]
-            elif 'Llama-3.1-8B' in self.args.model_name_or_path:
+            elif 'llama-3.1-8b' in model_name:
                 pos = [(27, 28, 0.1217), (13, 27, 0.1147), (15, 28, 0.1142), (17, 8, 0.0937), (21, 2, 0.0867), (10, 12, 0.0717), (15, 16, 0.067), (15, 2, 0.0668), (15, 1, 0.066), (31, 24, 0.0605),]
-            elif 'Mistral-7B' in self.args.model_name_or_path:
+            elif 'mistral-7b' in model_name or 'mistral' in model_name:
                 pos = [(14, 31, 0.1186), (26, 29, 0.0876), (12, 4, 0.0791), (12, 7, 0.0709), (30, 4, 0.0674), (30, 9, 0.0601), (22, 30, 0.0588), (14, 19, 0.0564), (11, 10, 0.047), (18, 1, 0.0429), ]
+            else:
+                pos = []
+                if self.fv_pr:
+                    logger.warning("No predefined head positions for model '%s'; fv_pr will skip head projection loss.", self.args.model_name_or_path)
 
             self.pos = pos[:10]
         
         self.head_dim = self.model.config.hidden_size // self.model.config.num_attention_heads
-        self.layer_hook_names = [f'module.base_model.model.model.layers.{layer}' for layer in range(32)]
-        self.head_hook_names = [f'module.base_model.model.model.layers.{layer}.self_attn.o_proj' for layer in range(32)]
+        layer_count = getattr(self.model.config, "num_hidden_layers", 32)
+        self.layer_hook_names = [f'module.base_model.model.model.layers.{layer}' for layer in range(layer_count)]
+        self.head_hook_names = [f'module.base_model.model.model.layers.{layer}.self_attn.o_proj' for layer in range(layer_count)]
 
         self.cnt = 0
 
