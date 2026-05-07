@@ -104,6 +104,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         self.head_hook_names = [f'module.base_model.model.model.layers.{layer}.self_attn.o_proj' for layer in range(layer_count)]
 
         self.cnt = 0
+        self._fv_pr_shape_checked = False
 
     def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
 
@@ -139,14 +140,35 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
                 if self.fv_pr:
                     outputs = model(**inputs, output_attentions=self.fv_pr)  
-                    ori_heads = []
-                    for i, (l,h,_) in enumerate(self.pos):
-                        hidden_state = outputs["attentions"][l]
-                        # print(model.module.model.fv_projection.weight[0][0])
-                        ori_heads.append(deepcopy(hidden_state[row_indices, \
-                            depth_indices][:, self.head_dim*h:self.head_dim*(1+h)].detach()))
-                    del outputs
-                model.module.enable_adapter_layers()
+                    if not self._fv_pr_shape_checked:
+                        attn_example = outputs["attentions"][0] if outputs.get("attentions", None) is not None else None
+                        # Custom LLaMA returns per-token hidden features in `attentions`;
+                        # HF Mistral returns attention weights [bs, n_heads, q_len, k_len].
+                        if attn_example is None or attn_example.dim() != 3:
+                            self.fv_pr = False
+                            if dist.get_rank() == 0:
+                                logger.warning(
+                                    "Disabling fv_pr: expected attention tensor rank 3 but got %s. "
+                                    "This model returns standard attention weights, which are incompatible "
+                                    "with the current fv_pr head-projection loss.",
+                                    None if attn_example is None else attn_example.dim(),
+                                )
+                        self._fv_pr_shape_checked = True
+                    if not self.fv_pr:
+                        del outputs
+                        model.module.enable_adapter_layers()
+                        ori_heads = None
+                    else:
+                        ori_heads = []
+                        for i, (l,h,_) in enumerate(self.pos):
+                            hidden_state = outputs["attentions"][l]
+                            # print(model.module.model.fv_projection.weight[0][0])
+                            ori_heads.append(deepcopy(hidden_state[row_indices, \
+                                depth_indices][:, self.head_dim*h:self.head_dim*(1+h)].detach()))
+                        del outputs
+                        model.module.enable_adapter_layers()
+                else:
+                    model.module.enable_adapter_layers()
 
 
         with self.compute_loss_context_manager():
