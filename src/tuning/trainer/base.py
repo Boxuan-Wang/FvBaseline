@@ -227,6 +227,10 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
         Subclass and override for custom behavior.
         """
+        inputs = dict(inputs)
+        # Auxiliary field used by custom generation path; not a valid HF forward arg.
+        inputs.pop("input_ids_wo_label", None)
+
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
         else:
