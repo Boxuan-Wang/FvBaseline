@@ -583,8 +583,10 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         """
 
         if not self.args.predict_with_generate or prediction_loss_only:
+            clean_inputs = dict(inputs)
+            clean_inputs.pop("input_ids_wo_label", None)
             return super().prediction_step(
-                model, inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys
+                model, clean_inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys
             )
 
         has_labels = "labels" in inputs
